@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select Region",
+        "description": "Select your region.",
+        "data": {
+          "region": "Region"
+        }
+      },
+      "complex": {
+        "title": "Select Complex",
+        "description": "Select your apartment complex.",
+        "data": {
+          "complex": "Complex"
+        }
+      },
+      "credentials": {
+        "title": "Login",
+        "description": "Enter your SmartHome app credentials.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "init": {
+        "title": "Device Settings",
+        "data": {
+          "elevator_duration": "Elevator switch active duration (sec)",
+          "door_duration": "Door motion sensor active duration (sec)",
+          "vehicle_duration": "Vehicle motion sensor active duration (sec)",
+          "camera_duration": "Camera motion sensor active duration (sec)"
+        }
+      },
+      "wall_pad": {
+        "title": "Wall Pad Authentication",
+        "description": "Enter the authentication number shown on your wall pad. (Building: {dong}, Unit: {ho})",
+        "data": {
+          "wallpad_number": "Wall pad code"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "no_region": "Please select a region.",
+      "no_complex": "Please select a complex.",
+      "invalid_wallpad": "Invalid wall pad code.",
+      "wallpad_required": "Please enter the code."
+    },
+    "abort": {
+      "already_configured": "This complex is already configured.",
+      "wallpad_failed": "Wall pad authentication failed."
+    }
+  }
+}

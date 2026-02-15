@@ -1,0 +1,101 @@
+"""Constants for Daelim SmartHome integration."""
+
+DOMAIN = "daelim_smarthome"
+MANUFACTURER = "DL E&C Co.,Ltd."
+
+# MMF Server
+MMF_SERVER_PORT = 25301
+
+# URLs (Daelim SmartHome official)
+MENU_INFO_URL = "https://smarthome.daelimcorp.co.kr/json/getApartMenuInfo.do"
+
+# Packet Types
+class Types:
+    SYSTEM = 0
+    LOGIN = 1
+    GUARD = 2
+    DEVICE = 3
+    EMS = 4
+    INFO = 5
+    HEALTHCARE = 6
+    SETTING = 7
+    ELEVATOR_CALL = 8
+    ETCETERA = 9
+
+
+class DeviceSubTypes:
+    QUERY_REQUEST = 1
+    QUERY_RESPONSE = 2
+    INVOKE_REQUEST = 3
+    INVOKE_RESPONSE = 4
+    WALL_SOCKET_QUERY_REQUEST = 6
+    WALL_SOCKET_QUERY_RESPONSE = 7
+    WALL_SOCKET_INVOKE_REQUEST = 8
+    WALL_SOCKET_INVOKE_RESPONSE = 9
+
+
+class LoginSubTypes:
+    CERTIFICATION_PIN_REQUEST = 5
+    CERTIFICATION_PIN_RESPONSE = 6
+    MENU_REQUEST = 7
+    MENU_RESPONSE = 8
+    LOGIN_PIN_REQUEST = 9
+    LOGIN_PIN_RESPONSE = 10
+    PUSH_REQUEST = 13
+    PUSH_RESPONSE = 14
+    DELETE_CERTIFICATION_REQUEST = 17
+    APPROVAL_REQUEST = 27
+    WALL_PAD_REQUEST = 29
+    WALL_PAD_RESPONSE = 30
+    APPROVAL_DELETE_REQUEST = 47
+
+
+class SettingSubTypes:
+    PUSH_QUERY_REQUEST = 1
+    PUSH_QUERY_RESPONSE = 2
+    PUSH_SETTING_REQUEST = 3
+    PUSH_SETTING_RESPONSE = 4
+
+
+class InfoSubTypes:
+    VISITOR_LIST_REQUEST = 9
+    VISITOR_LIST_RESPONSE = 10
+    VISITOR_CHECK_REQUEST = 11
+    VISITOR_CHECK_RESPONSE = 12
+    CAR_GETTING_IN_LIST_REQUEST = 38
+    CAR_GETTING_IN_LIST_RESPONSE = 39
+    ACCESS_LIST_REQUEST = 47
+    ACCESS_LIST_RESPONSE = 48
+
+
+class ElevatorCallSubTypes:
+    CALL_REQUEST = 1
+    CALL_RESPONSE = 2
+
+
+# FCM Push Types (from Daelim app)
+class PushTypes:
+    DEVICES = 3
+    ENVIRONMENTS = 4
+    EVENTS = 5
+
+
+class EventPushTypes:
+    VISITOR_PICTURE_STORED = 32
+    CAR_GETTING_IN = 46
+    FRONT_DOOR_CHANGES = 61
+
+
+# Daelim FCM config (from SmartHome app)
+FCM_SENDER_ID = "251248256994"
+FCM_PROJECT_ID = "daelim-smarthome"
+FCM_APP_ID = "1:251248256994:android:4f4ccc5221a7b689"
+FCM_API_KEY = "AIzaSyAm__JwMJS8utB54p36cDxl8lsKu2wHKNI"
+
+
+class Errors:
+    SUCCESS = 0
+    UNCERTIFIED_DEVICE = 2
+    INVALID_CERTIFICATION_NUMBER = 22
+    INVALID_USERNAME_AND_PASSWORD = 4
+    REGISTRATION_NOT_COMPLETED = 25

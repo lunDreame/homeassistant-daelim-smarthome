@@ -1,0 +1,14 @@
+{
+  "domain": "daelim_smarthome",
+  "name": "Daelim SmartHome",
+  "integration_type": "hub",
+  "documentation": "https://github.com/lunDreame/homeassistant-daelim-smarthome",
+  "version": "1.0.0",
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "requirements": [
+    "aiohttp>=3.8.0",
+    "firebase-messaging>=0.4.5"
+  ],
+  "codeowners": ["@lunDreame"]
+}
