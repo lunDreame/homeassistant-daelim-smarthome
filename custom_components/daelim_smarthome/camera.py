@@ -1,9 +1,8 @@
-"""Camera platform for Daelim SmartHome (Intercom visitor snapshot)."""
+"""Camera platform for Daelim SmartHome."""
 
 from __future__ import annotations
 
 import binascii
-import logging
 from typing import Any
 
 from homeassistant.components.camera import Camera
@@ -13,8 +12,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, MANUFACTURER
-
-_LOGGER = logging.getLogger(__name__)
 
 CAMERA_DEVICES = [
     ("FD-CAM0", "세대현관", "door_record_duringlist"),

@@ -63,7 +63,7 @@ class DaelimFcmClient:
         self.entry_id = entry_id
         self.on_push = on_push
         self._client: FcmPushClient | None = None
-        self._credentials: dict | None = load_credentials(hass, entry_id)
+        self._credentials: dict | None = None
         self._fcm_token: str | None = None
 
     def _on_notification(self, data: dict, persistent_id: str, context: object) -> None:
@@ -81,11 +81,23 @@ class DaelimFcmClient:
     def _on_credentials_updated(self, credentials: dict) -> None:
         """Save credentials when updated."""
         self._credentials = credentials
-        save_credentials(self.hass, self.entry_id, credentials)
+        self.hass.add_job(
+            self.hass.async_add_executor_job,
+            save_credentials,
+            self.hass,
+            self.entry_id,
+            credentials,
+        )
 
     async def start(self) -> str | None:
         """Start FCM client and return FCM token for PUSH_REQUEST."""
         try:
+            if self._credentials is None:
+                self._credentials = await self.hass.async_add_executor_job(
+                    load_credentials,
+                    self.hass,
+                    self.entry_id,
+                )
             config = FcmRegisterConfig(
                 project_id=FCM_PROJECT_ID,
                 app_id=FCM_APP_ID,

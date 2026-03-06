@@ -1,8 +1,7 @@
-"""Binary sensor platform for Daelim SmartHome (Door, Vehicle)."""
+"""Binary sensor platform for Daelim SmartHome."""
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -14,8 +13,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import DaelimEventCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 DOOR_DEVICES = [
     ("FD-000000", "세대현관", False),
@@ -33,9 +30,8 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Daelim binary sensors (door, vehicle)."""
+    """Set up Daelim binary sensors."""
     data = hass.data[DOMAIN][entry.entry_id]
-    client = data["client"]
     entry_id = entry.entry_id
     complex_name = entry.data["complex"]
 
@@ -71,7 +67,7 @@ async def async_setup_entry(
 
 
 class DaelimDoorBinarySensor(CoordinatorEntity[DaelimEventCoordinator], BinarySensorEntity):
-    """Daelim door motion sensor - polls ACCESS_LIST via coordinator."""
+    """Daelim door motion sensor - FCM trigger via event coordinator."""
 
     _attr_device_class = "motion"
 
@@ -140,7 +136,7 @@ class DaelimDoorBinarySensor(CoordinatorEntity[DaelimEventCoordinator], BinarySe
 
 
 class DaelimVehicleBinarySensor(CoordinatorEntity[DaelimEventCoordinator], BinarySensorEntity):
-    """Daelim vehicle (parking) motion sensor - polls CAR_GETTING_IN_LIST via coordinator."""
+    """Daelim vehicle (parking) motion sensor - FCM trigger via event coordinator."""
 
     _attr_device_class = "motion"
 
@@ -227,7 +223,6 @@ class DaelimVisitorBinarySensor(CoordinatorEntity[DaelimEventCoordinator], Binar
         self._attr_unique_id = f"{entry_id}_{device_id}_visitor"
         self._attr_is_on = False
         self._complex_name = complex_name
-        self._is_communal = "공동" in name
         self._reset_timer: Any = None
 
     @property

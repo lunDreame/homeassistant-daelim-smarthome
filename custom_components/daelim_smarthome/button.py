@@ -1,8 +1,6 @@
-"""Button platform for Daelim SmartHome (Elevator call)."""
+"""Button platform for Daelim SmartHome."""
 
 from __future__ import annotations
-
-import logging
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
@@ -11,8 +9,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, MANUFACTURER
-
-_LOGGER = logging.getLogger(__name__)
 
 ELEVATOR_DEVICE = ("EV-000000", "엘리베이터")
 

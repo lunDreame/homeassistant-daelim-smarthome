@@ -26,7 +26,7 @@
       "init": {
         "title": "Device Settings",
         "data": {
-          "elevator_duration": "Elevator switch active duration (sec)",
+          "group_by_type": "Group entities under type devices",
           "door_duration": "Door motion sensor active duration (sec)",
           "vehicle_duration": "Vehicle motion sensor active duration (sec)",
           "camera_duration": "Camera motion sensor active duration (sec)"
@@ -49,7 +49,22 @@
     },
     "abort": {
       "already_configured": "This complex is already configured.",
-      "wallpad_failed": "Wall pad authentication failed."
+      "wallpad_failed": "Wall pad authentication failed.",
+      "no_client": "Authentication session not found. Please try again.",
+      "invalid_auth": "Invalid username or password."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Device Settings",
+        "data": {
+          "group_by_type": "Group entities under type devices",
+          "door_duration": "Door motion sensor active duration (sec)",
+          "vehicle_duration": "Vehicle motion sensor active duration (sec)",
+          "camera_duration": "Camera motion sensor active duration (sec)"
+        }
+      }
     }
   }
 }

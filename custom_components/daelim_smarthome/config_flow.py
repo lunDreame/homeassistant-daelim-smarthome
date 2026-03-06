@@ -44,6 +44,7 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._complexes_data: list[dict] = []
         self._selected_region: str | None = None
         self._selected_complex: dict | None = None
+        self._reauth_entry_id: str | None = None
         self._wallpad_client = None
         self._wallpad_dong: str = ""
         self._wallpad_ho: str = ""
@@ -163,6 +164,65 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reauth(
+        self,
+        entry_data: dict[str, Any],
+    ) -> FlowResult:
+        """Handle reauthentication flow."""
+        from .client import DaelimClient
+
+        entry_id = self.context.get("entry_id")
+        config_entry = (
+            self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
+        )
+        if config_entry is None:
+            return self.async_abort(reason="no_client")
+
+        self._reauth_entry_id = config_entry.entry_id
+        self._selected_region = config_entry.data.get("region")
+        self._selected_complex = {
+            "name": config_entry.data.get("complex", ""),
+            "serverIp": config_entry.data.get("server_ip", ""),
+            "apartId": config_entry.data.get("apart_id", ""),
+            "directoryName": config_entry.data.get("directory_name", ""),
+        }
+
+        username = config_entry.data["username"]
+        password = config_entry.data["password"]
+        uuid = config_entry.data.get("uuid") or generate_uuid_from_username(username)
+
+        client = DaelimClient(
+            server_ip=self._selected_complex["serverIp"],
+            username=username,
+            password=password,
+            uuid=uuid,
+            complex_name=self._selected_complex["name"],
+        )
+
+        try:
+            ok, extra = await client.try_login(self._selected_complex.get("directoryName", ""))
+            if ok:
+                client.disconnect()
+                return await self.async_update_reload_and_abort(
+                    config_entry,
+                    data_updates={"uuid": uuid},
+                )
+
+            if extra and extra.get("require_wallpad"):
+                self._wallpad_client = client
+                self._wallpad_dong = extra.get("dong", "")
+                self._wallpad_ho = extra.get("ho", "")
+                self._pending_username = username
+                self._pending_password = password
+                self._pending_uuid = uuid
+                return await self.async_step_wall_pad()
+
+            client.disconnect()
+            return self.async_abort(reason="invalid_auth")
+        except Exception:
+            client.disconnect()
+            raise
+
     async def async_step_wall_pad(
         self,
         user_input: dict[str, Any] | None = None,
@@ -186,6 +246,17 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if ok:
                     self._wallpad_client.disconnect()
                     self._wallpad_client = None
+                    if self._reauth_entry_id:
+                        reauth_entry = self.hass.config_entries.async_get_entry(
+                            self._reauth_entry_id
+                        )
+                        self._reauth_entry_id = None
+                        if reauth_entry is None:
+                            return self.async_abort(reason="no_client")
+                        return await self.async_update_reload_and_abort(
+                            reauth_entry,
+                            data_updates={"uuid": self._pending_uuid},
+                        )
                     return self.async_create_entry(
                         title=self._selected_complex["name"],
                         data={
@@ -233,7 +304,8 @@ class DaelimOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__()
+        self._config_entry = config_entry
 
     async def async_step_init(
         self,
@@ -243,15 +315,15 @@ class DaelimOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        options = self.config_entry.options or {}
+        options = self._config_entry.options or {}
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        "elevator_duration",
-                        default=options.get("elevator_duration", 30),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=120)),
+                        "group_by_type",
+                        default=options.get("group_by_type", True),
+                    ): bool,
                     vol.Optional(
                         "door_duration",
                         default=options.get("door_duration", 5),

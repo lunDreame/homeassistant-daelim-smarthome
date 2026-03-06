@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from .client import DaelimClient
 from .config_flow import generate_uuid_from_username
-from .const import DOMAIN, MANUFACTURER, EventPushTypes, PushTypes
+from .const import DOMAIN, EventPushTypes, PushTypes
 from .coordinator import DaelimEventCoordinator
 from .fcm_client import DaelimFcmClient
 
@@ -24,7 +25,6 @@ PLATFORMS: list[Platform] = [
     Platform.LIGHT,
     Platform.SWITCH,
     Platform.CLIMATE,
-    Platform.LOCK,
     Platform.FAN,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
@@ -52,14 +52,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         complex_name=entry.data["complex"],
     )
 
-    if not await client.login():
+    ok, extra = await client.try_login(entry.data.get("directory_name"))
+    if not ok and extra and extra.get("require_wallpad"):
+        client.disconnect()
+        raise ConfigEntryAuthFailed("wallpad_required")
+    if not ok:
         _LOGGER.error("Failed to login to Daelim SmartHome")
         return False
 
-    event_coordinator = DaelimEventCoordinator(hass, client, entry.entry_id)
+    event_coordinator = DaelimEventCoordinator(hass)
 
     def _on_fcm_push(ptype: int, sub_type: int, data: dict) -> None:
-        """Handle FCM push notification (may be called from background thread)."""
+        """Handle FCM push notification."""
 
         async def _handle() -> None:
             if ptype == PushTypes.EVENTS:
@@ -98,6 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "entry": entry,
         "event_coordinator": event_coordinator,
         "fcm_client": fcm_client,
+        "listeners": [],
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -110,6 +115,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok and entry.entry_id in hass.data.get(DOMAIN, {}):
         data = hass.data[DOMAIN].pop(entry.entry_id)
+        for unsub in data.get("listeners", []):
+            try:
+                unsub()
+            except Exception:  # noqa: BLE001
+                pass
         if "fcm_client" in data:
             await data["fcm_client"].stop()
         if "client" in data:

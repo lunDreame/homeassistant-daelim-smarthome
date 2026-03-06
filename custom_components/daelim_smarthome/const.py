@@ -6,9 +6,6 @@ MANUFACTURER = "DL E&C Co.,Ltd."
 # MMF Server
 MMF_SERVER_PORT = 25301
 
-# URLs (Daelim SmartHome official)
-MENU_INFO_URL = "https://smarthome.daelimcorp.co.kr/json/getApartMenuInfo.do"
-
 # Packet Types
 class Types:
     SYSTEM = 0
@@ -28,6 +25,7 @@ class DeviceSubTypes:
     QUERY_RESPONSE = 2
     INVOKE_REQUEST = 3
     INVOKE_RESPONSE = 4
+    INVOKE_NOTIFICATION = 5
     WALL_SOCKET_QUERY_REQUEST = 6
     WALL_SOCKET_QUERY_RESPONSE = 7
     WALL_SOCKET_INVOKE_REQUEST = 8
@@ -62,10 +60,6 @@ class InfoSubTypes:
     VISITOR_LIST_RESPONSE = 10
     VISITOR_CHECK_REQUEST = 11
     VISITOR_CHECK_RESPONSE = 12
-    CAR_GETTING_IN_LIST_REQUEST = 38
-    CAR_GETTING_IN_LIST_RESPONSE = 39
-    ACCESS_LIST_REQUEST = 47
-    ACCESS_LIST_RESPONSE = 48
 
 
 class ElevatorCallSubTypes:
@@ -73,7 +67,7 @@ class ElevatorCallSubTypes:
     CALL_RESPONSE = 2
 
 
-# FCM Push Types (from Daelim app)
+# FCM Push Types
 class PushTypes:
     DEVICES = 3
     ENVIRONMENTS = 4
@@ -86,7 +80,7 @@ class EventPushTypes:
     FRONT_DOOR_CHANGES = 61
 
 
-# Daelim FCM config (from SmartHome app)
+# Daelim FCM config
 FCM_SENDER_ID = "251248256994"
 FCM_PROJECT_ID = "daelim-smarthome"
 FCM_APP_ID = "1:251248256994:android:4f4ccc5221a7b689"

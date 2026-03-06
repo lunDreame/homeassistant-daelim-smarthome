@@ -6,7 +6,8 @@ import asyncio
 import json
 import struct
 import logging
-from typing import Any
+import time
+from typing import Any, Callable
 
 from .const import (
     MMF_SERVER_PORT,
@@ -27,23 +28,23 @@ HEADER_SIZE = 24
 def create_packet(body: dict, pin: str, ptype: int, sub_type: int) -> bytes:
     """Create MMF protocol packet."""
     header = pin.encode("utf-8").ljust(8)[:8]
-    header += struct.pack("<i", ptype)
-    header += struct.pack("<i", sub_type)
-    header += struct.pack("<h", 1)
-    header += struct.pack("<h", 3)
-    header += struct.pack("<b", Errors.SUCCESS)
+    header += struct.pack(">i", ptype)
+    header += struct.pack(">i", sub_type)
+    header += struct.pack(">h", 1)
+    header += struct.pack(">h", 3)
+    header += struct.pack(">b", Errors.SUCCESS)
     header += b"\x00\x00\x00"
 
     body_bytes = json.dumps(body, ensure_ascii=False).encode("utf-8")
     packet = header + body_bytes
-    return struct.pack("<i", len(packet)) + packet
+    return struct.pack(">i", len(packet)) + packet
 
 
 def parse_chunk(data: bytes) -> tuple[bytes, int] | None:
     """Parse chunk - returns (packet_data, total_size) or None if incomplete."""
     if len(data) < 4:
         return None
-    length = struct.unpack("<i", data[:4])[0]
+    length = struct.unpack(">i", data[:4])[0]
     if length <= 0 or length > 1024 * 1024:
         return None
     if len(data) < 4 + length:
@@ -53,9 +54,9 @@ def parse_chunk(data: bytes) -> tuple[bytes, int] | None:
 
 def parse_packet_body(packet_data: bytes) -> tuple[dict, int, int, int]:
     """Parse packet body - returns (body, ptype, sub_type, error)."""
-    ptype = struct.unpack("<i", packet_data[8:12])[0]
-    sub_type = struct.unpack("<i", packet_data[12:16])[0]
-    error = struct.unpack("<b", packet_data[20:21])[0]
+    ptype = struct.unpack(">i", packet_data[8:12])[0]
+    sub_type = struct.unpack(">i", packet_data[12:16])[0]
+    error = struct.unpack(">b", packet_data[20:21])[0]
     body_str = packet_data[HEADER_SIZE:].decode("utf-8", errors="ignore")
     try:
         body = json.loads(body_str) if body_str else {}
@@ -91,15 +92,107 @@ class DaelimClient:
         self._read_buffer = b""
         self._read_task: asyncio.Task | None = None
         self._response_futures: dict[tuple[int, int], asyncio.Future] = {}
+        self._response_listeners: dict[tuple[int, int], list[Callable[[dict], Any]]] = {}
+        self._query_cache: dict[str, tuple[float, dict | None]] = {}
+        self._query_inflight: dict[str, asyncio.Future] = {}
+        # Reuse "all" query responses across concurrent state-refresh bursts.
+        self._query_cache_ttl = 15.0
+        self._directory_name: str | None = None
+        self._reconnect_lock = asyncio.Lock()
+        self._last_reconnect_attempt = 0.0
+        self._reconnect_cooldown = 15.0
         self._lock = asyncio.Lock()
 
     def _get_pin(self) -> str:
         """Get authorization PIN."""
         return self._login_pin if len(self._login_pin) == 8 else self._pin
 
+    def _is_socket_ready(self) -> bool:
+        """Check if current TCP socket can be used."""
+        if not self._connected or not self._writer:
+            return False
+        return not self._writer.is_closing()
+
+    async def _ensure_session(self) -> bool:
+        """Ensure we have an active session; attempt re-login when disconnected."""
+        if self._is_socket_ready():
+            return True
+
+        now = time.monotonic()
+        if now - self._last_reconnect_attempt < self._reconnect_cooldown:
+            return False
+
+        async with self._reconnect_lock:
+            if self._is_socket_ready():
+                return True
+
+            now = time.monotonic()
+            if now - self._last_reconnect_attempt < self._reconnect_cooldown:
+                return False
+
+            self._last_reconnect_attempt = now
+            _LOGGER.warning(
+                "MMF session is disconnected. Attempting re-login (server=%s)",
+                self.server_ip,
+            )
+            ok, extra = await self.try_login(self._directory_name)
+            if not ok:
+                if extra and extra.get("require_wallpad"):
+                    _LOGGER.warning("MMF re-login requires wallpad authentication")
+                else:
+                    _LOGGER.warning("MMF re-login failed")
+            return ok
+
+    def register_response_listener(
+        self,
+        ptype: int,
+        sub_type: int,
+        callback: Callable[[dict], Any],
+    ) -> Callable[[], None]:
+        """Register response listener and return unsubscribe callback."""
+        key = (ptype, sub_type)
+        listeners = self._response_listeners.setdefault(key, [])
+        listeners.append(callback)
+
+        def _unsub() -> None:
+            current = self._response_listeners.get(key)
+            if not current:
+                return
+            try:
+                current.remove(callback)
+            except ValueError:
+                return
+            if not current:
+                self._response_listeners.pop(key, None)
+
+        return _unsub
+
+    def _dispatch_response_listeners(
+        self,
+        ptype: int,
+        sub_type: int,
+        body: dict,
+    ) -> None:
+        key = (ptype, sub_type)
+        listeners = list(self._response_listeners.get(key, []))
+        for callback in listeners:
+            try:
+                result = callback(body)
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Response listener error (ptype=%s, subtype=%s): %s",
+                    ptype,
+                    sub_type,
+                    err,
+                )
+
     async def connect(self) -> bool:
         """Connect to MMF server."""
         try:
+            if self._writer and not self._writer.is_closing():
+                self.disconnect()
             self._reader, self._writer = await asyncio.wait_for(
                 asyncio.open_connection(self.server_ip, MMF_SERVER_PORT),
                 timeout=10,
@@ -121,8 +214,13 @@ class DaelimClient:
             self._read_task = None
         for future in self._response_futures.values():
             if not future.done():
-                future.set_result(None)
+                future.set_result((None, -1))
         self._response_futures.clear()
+        for future in self._query_inflight.values():
+            if not future.done():
+                future.set_result(None)
+        self._query_inflight.clear()
+        self._query_cache.clear()
         if self._writer:
             try:
                 self._writer.close()
@@ -147,15 +245,44 @@ class DaelimClient:
                     self._read_buffer = self._read_buffer[consumed:]
                     body, ptype, sub_type, error = parse_packet_body(packet_data)
                     key = (ptype, sub_type)
-                    if key in self._response_futures:
-                        future = self._response_futures.pop(key)
+                    matched_key = key if key in self._response_futures else None
+
+                    # In MMF, error packets can arrive with a different subtype
+                    # than the expected response subtype. In that case, resolve
+                    # the oldest pending request for the same packet type.
+                    if matched_key is None and error != Errors.SUCCESS:
+                        for pending_key in self._response_futures:
+                            if pending_key[0] == ptype:
+                                matched_key = pending_key
+                                break
+
+                    if matched_key is not None:
+                        future = self._response_futures.pop(matched_key)
                         if not future.done():
                             future.set_result((body, error))
+                    if error == Errors.SUCCESS:
+                        self._dispatch_response_listeners(ptype, sub_type, body)
             except asyncio.CancelledError:
                 break
             except (ConnectionResetError, BrokenPipeError, OSError):
                 break
         self._connected = False
+        if self._writer:
+            try:
+                self._writer.close()
+            except OSError:
+                pass
+        self._writer = None
+        self._reader = None
+        for future in self._response_futures.values():
+            if not future.done():
+                future.set_result((None, -1))
+        self._response_futures.clear()
+        for future in self._query_inflight.values():
+            if not future.done():
+                future.set_result(None)
+        self._query_inflight.clear()
+        self._query_cache.clear()
 
     async def _send_request(
         self,
@@ -164,11 +291,16 @@ class DaelimClient:
         sub_type: int,
     ) -> None:
         """Send request (fire-and-forget)."""
-        if not self._writer:
+        if not self._is_socket_ready():
             return
         data = create_packet(body, self._get_pin(), ptype, sub_type)
-        self._writer.write(data)
-        await self._writer.drain()
+        try:
+            self._writer.write(data)
+            await self._writer.drain()
+        except (ConnectionResetError, BrokenPipeError, OSError) as err:
+            _LOGGER.warning("Socket send failed: %s", err)
+            self.disconnect()
+            raise
 
     async def send_unreliable_request(
         self,
@@ -177,11 +309,15 @@ class DaelimClient:
         sub_type: int,
     ) -> None:
         """Send request without waiting for response (fire-and-forget)."""
-        if not self._writer:
+        if not self._is_socket_ready():
             return
         data = create_packet(body, self._get_pin(), ptype, sub_type)
-        self._writer.write(data)
-        await self._writer.drain()
+        try:
+            self._writer.write(data)
+            await self._writer.drain()
+        except (ConnectionResetError, BrokenPipeError, OSError) as err:
+            _LOGGER.warning("Socket send failed (unreliable): %s", err)
+            self.disconnect()
 
     async def _request_response(
         self,
@@ -192,19 +328,30 @@ class DaelimClient:
         timeout: float = 10.0,
     ) -> tuple[dict | None, int]:
         """Send request and wait for matching response. Returns (body, error_code)."""
-        async with self._lock:
-            key = (ptype, to_sub)
-            future: asyncio.Future[tuple[dict, int]] = asyncio.Future()
-            self._response_futures[key] = future
-            await self._send_request(body, ptype, from_sub)
-        try:
-            result = await asyncio.wait_for(future, timeout=timeout)
-            return result
-        except asyncio.TimeoutError:
-            self._response_futures.pop(key, None)
+        if not await self._ensure_session():
             return (None, -1)
-        finally:
-            self._response_futures.pop(key, None)
+
+        key = (ptype, to_sub)
+        # MMF responses are keyed by (type, subtype) without per-request IDs.
+        # Keep request/response roundtrips serialized so concurrent same-key
+        # requests cannot overwrite each other's futures.
+        async with self._lock:
+            if not self._is_socket_ready():
+                return (None, -1)
+            future: asyncio.Future[tuple[dict | None, int]] = (
+                asyncio.get_running_loop().create_future()
+            )
+            self._response_futures[key] = future
+            try:
+                await self._send_request(body, ptype, from_sub)
+                result = await asyncio.wait_for(future, timeout=timeout)
+                return result
+            except (ConnectionResetError, BrokenPipeError, OSError):
+                return (None, -1)
+            except asyncio.TimeoutError:
+                return (None, -1)
+            finally:
+                self._response_futures.pop(key, None)
 
     async def _do_certification_step(
         self,
@@ -231,12 +378,12 @@ class DaelimClient:
             return (True, None)
 
         if cert_err in (Errors.UNCERTIFIED_DEVICE, Errors.REGISTRATION_NOT_COMPLETED):
-            await self.send_unreliable_request(
-                {"id": self.username, "pw": self.password},
-                Types.LOGIN,
-                LoginSubTypes.DELETE_CERTIFICATION_REQUEST,
-            )
             if cert_err == Errors.UNCERTIFIED_DEVICE:
+                await self.send_unreliable_request(
+                    {"id": self.username, "pw": self.password},
+                    Types.LOGIN,
+                    LoginSubTypes.DELETE_CERTIFICATION_REQUEST,
+                )
                 await self.send_unreliable_request(
                     {"id": self.username},
                     Types.LOGIN,
@@ -279,7 +426,7 @@ class DaelimClient:
             "id": self.username,
             "num": str(wallpad_number),
         }
-        resp, err = await self._request_response(
+        _, err = await self._request_response(
             body,
             Types.LOGIN,
             LoginSubTypes.WALL_PAD_REQUEST,
@@ -288,7 +435,7 @@ class DaelimClient:
         )
         if err == Errors.INVALID_CERTIFICATION_NUMBER:
             return (False, "invalid_wallpad")
-        if err != Errors.SUCCESS or not resp:
+        if err != Errors.SUCCESS:
             return (False, None)
         cert_ok, _ = await self._do_certification_step(None)
         if cert_ok is not True:
@@ -305,6 +452,9 @@ class DaelimClient:
         Returns (False, None) on other failure.
         When require_wallpad, client stays connected for submit_wallpad().
         """
+        if directory_name is not None:
+            self._directory_name = directory_name
+
         if not await self.connect():
             return (False, None)
 
@@ -384,7 +534,11 @@ class DaelimClient:
 
     async def login(self, directory_name: str | None = None) -> bool:
         """Perform login flow (convenience wrapper)."""
+        if directory_name is not None:
+            self._directory_name = directory_name
         ok, _ = await self.try_login(directory_name)
+        if not ok:
+            self.disconnect()
         return ok
 
     async def register_push_token(self, fcm_token: str) -> None:
@@ -406,8 +560,11 @@ class DaelimClient:
         """Get last menu response (controlinfo, etc)."""
         return getattr(self, "_menu_response", {})
 
-    async def device_query(self, device_type: str, uid: str = "all") -> dict | None:
-        """Query device state."""
+    async def _device_query_response(
+        self,
+        device_type: str,
+        uid: str,
+    ) -> tuple[dict | None, int]:
         body = {"type": "query", "item": [{"device": device_type, "uid": uid}]}
         resp, err = await self._request_response(
             body,
@@ -415,6 +572,38 @@ class DaelimClient:
             DeviceSubTypes.QUERY_REQUEST,
             DeviceSubTypes.QUERY_RESPONSE,
         )
+        if err != Errors.SUCCESS and device_type in ("wallsocket", "outlet"):
+            resp, err = await self._request_response(
+                body,
+                Types.DEVICE,
+                DeviceSubTypes.WALL_SOCKET_QUERY_REQUEST,
+                DeviceSubTypes.WALL_SOCKET_QUERY_RESPONSE,
+            )
+        return resp, err
+
+    async def device_query(self, device_type: str, uid: str = "all") -> dict | None:
+        """Query device state."""
+        cache_key = f"{device_type}:{uid}"
+        if uid == "all":
+            cached = self._query_cache.get(cache_key)
+            if cached and (time.monotonic() - cached[0]) <= self._query_cache_ttl:
+                return cached[1]
+            in_flight = self._query_inflight.get(cache_key)
+            if in_flight:
+                return await in_flight
+            future: asyncio.Future[dict | None] = asyncio.get_running_loop().create_future()
+            self._query_inflight[cache_key] = future
+            try:
+                resp, err = await self._device_query_response(device_type, uid)
+                result = resp if err == Errors.SUCCESS else None
+                self._query_cache[cache_key] = (time.monotonic(), result)
+                if not future.done():
+                    future.set_result(result)
+                return result
+            finally:
+                self._query_inflight.pop(cache_key, None)
+
+        resp, err = await self._device_query_response(device_type, uid)
         return resp if err == Errors.SUCCESS else None
 
     async def device_invoke(
@@ -438,6 +627,7 @@ class DaelimClient:
             DeviceSubTypes.INVOKE_REQUEST,
             DeviceSubTypes.INVOKE_RESPONSE,
         )
+        self._invalidate_query_cache(device_type)
         return resp if err == Errors.SUCCESS else None
 
     async def wallsocket_invoke(
@@ -446,17 +636,34 @@ class DaelimClient:
         state: str,
     ) -> dict | None:
         """Invoke wall socket (outlet) command."""
-        body = {
-            "type": "invoke",
-            "item": [{"device": "wallsocket", "uid": uid, "arg1": state}],
-        }
+        body = {"type": "invoke", "item": [{"device": "wallsocket", "uid": uid, "arg1": state}]}
+        # refs compatibility: some complexes respond only to generic invoke subtypes.
         resp, err = await self._request_response(
             body,
             Types.DEVICE,
-            DeviceSubTypes.WALL_SOCKET_INVOKE_REQUEST,
-            DeviceSubTypes.WALL_SOCKET_INVOKE_RESPONSE,
+            DeviceSubTypes.INVOKE_REQUEST,
+            DeviceSubTypes.INVOKE_RESPONSE,
         )
+        if err != Errors.SUCCESS:
+            resp, err = await self._request_response(
+                body,
+                Types.DEVICE,
+                DeviceSubTypes.WALL_SOCKET_INVOKE_REQUEST,
+                DeviceSubTypes.WALL_SOCKET_INVOKE_RESPONSE,
+            )
+        self._invalidate_query_cache("wallsocket")
+        self._invalidate_query_cache("outlet")
         return resp if err == Errors.SUCCESS else None
+
+    def _invalidate_query_cache(self, device_type: str | None = None) -> None:
+        """Invalidate cached DEVICE QUERY responses."""
+        if device_type is None:
+            self._query_cache.clear()
+            return
+        prefix = f"{device_type}:"
+        stale_keys = [key for key in self._query_cache if key.startswith(prefix)]
+        for key in stale_keys:
+            self._query_cache.pop(key, None)
 
     async def elevator_call(self) -> dict | None:
         """Call elevator."""
@@ -487,29 +694,5 @@ class DaelimClient:
             Types.INFO,
             InfoSubTypes.VISITOR_CHECK_REQUEST,
             InfoSubTypes.VISITOR_CHECK_RESPONSE,
-        )
-        return resp if err == Errors.SUCCESS else None
-
-    async def access_list(self, page: int = 0, listcount: int = 10) -> dict | None:
-        """Get access (door) log list."""
-        body = {"page": page, "listcount": listcount}
-        resp, err = await self._request_response(
-            body,
-            Types.INFO,
-            InfoSubTypes.ACCESS_LIST_REQUEST,
-            InfoSubTypes.ACCESS_LIST_RESPONSE,
-        )
-        return resp if err == Errors.SUCCESS else None
-
-    async def car_getting_in_list(
-        self, page: int = 0, listcount: int = 10
-    ) -> dict | None:
-        """Get car entering (parking) log list."""
-        body = {"page": page, "listcount": listcount}
-        resp, err = await self._request_response(
-            body,
-            Types.INFO,
-            InfoSubTypes.CAR_GETTING_IN_LIST_REQUEST,
-            InfoSubTypes.CAR_GETTING_IN_LIST_RESPONSE,
         )
         return resp if err == Errors.SUCCESS else None
