@@ -44,7 +44,7 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._complexes_data: list[dict] = []
         self._selected_region: str | None = None
         self._selected_complex: dict | None = None
-        self._reauth_entry_id: str | None = None
+        self._pending_reauth_entry_id: str | None = None
         self._wallpad_client = None
         self._wallpad_dong: str = ""
         self._wallpad_ho: str = ""
@@ -178,7 +178,7 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if config_entry is None:
             return self.async_abort(reason="no_client")
 
-        self._reauth_entry_id = config_entry.entry_id
+        self._pending_reauth_entry_id = config_entry.entry_id
         self._selected_region = config_entry.data.get("region")
         self._selected_complex = {
             "name": config_entry.data.get("complex", ""),
@@ -246,11 +246,11 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if ok:
                     self._wallpad_client.disconnect()
                     self._wallpad_client = None
-                    if self._reauth_entry_id:
+                    if self._pending_reauth_entry_id:
                         reauth_entry = self.hass.config_entries.async_get_entry(
-                            self._reauth_entry_id
+                            self._pending_reauth_entry_id
                         )
-                        self._reauth_entry_id = None
+                        self._pending_reauth_entry_id = None
                         if reauth_entry is None:
                             return self.async_abort(reason="no_client")
                         return await self.async_update_reload_and_abort(
