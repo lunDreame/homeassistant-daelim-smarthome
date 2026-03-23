@@ -13,6 +13,7 @@ from .const import (
     MMF_SERVER_PORT,
     Types,
     DeviceSubTypes,
+    GuardSubTypes,
     LoginSubTypes,
     SettingSubTypes,
     ElevatorCallSubTypes,
@@ -664,6 +665,48 @@ class DaelimClient:
         stale_keys = [key for key in self._query_cache if key.startswith(prefix)]
         for key in stale_keys:
             self._query_cache.pop(key, None)
+
+    async def all_off(self) -> dict | None:
+        """Turn off all controllable devices."""
+        body = {
+            "type": "invoke",
+            "item": [{"device": "all", "uid": "all", "arg1": "off"}],
+        }
+        resp, err = await self._request_response(
+            body,
+            Types.DEVICE,
+            DeviceSubTypes.INVOKE_REQUEST,
+            DeviceSubTypes.INVOKE_RESPONSE,
+        )
+        self._invalidate_query_cache()
+        return resp if err == Errors.SUCCESS else None
+
+    async def query_guard_mode(self) -> dict | None:
+        """Query guard/security mode state."""
+        resp, err = await self._request_response(
+            {},
+            Types.GUARD,
+            GuardSubTypes.QUERY_REQUEST,
+            GuardSubTypes.QUERY_RESPONSE,
+        )
+        return resp if err == Errors.SUCCESS else None
+
+    async def set_guard_mode(
+        self,
+        mode: str,
+        password: str | None = None,
+    ) -> dict | None:
+        """Set guard/security mode."""
+        body = {"mode": str(mode)}
+        if password:
+            body["pwd"] = str(password)
+        resp, err = await self._request_response(
+            body,
+            Types.GUARD,
+            GuardSubTypes.ACTIVATE_REQUEST,
+            GuardSubTypes.ACTIVATE_RESPONSE,
+        )
+        return resp if err == Errors.SUCCESS else None
 
     async def elevator_call(self) -> dict | None:
         """Call elevator."""

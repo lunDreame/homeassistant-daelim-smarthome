@@ -32,6 +32,13 @@ class DeviceSubTypes:
     WALL_SOCKET_INVOKE_RESPONSE = 9
 
 
+class GuardSubTypes:
+    QUERY_REQUEST = 1
+    QUERY_RESPONSE = 2
+    ACTIVATE_REQUEST = 3
+    ACTIVATE_RESPONSE = 4
+
+
 class LoginSubTypes:
     CERTIFICATION_PIN_REQUEST = 5
     CERTIFICATION_PIN_RESPONSE = 6

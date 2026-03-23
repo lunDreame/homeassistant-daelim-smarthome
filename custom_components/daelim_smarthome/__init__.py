@@ -28,6 +28,7 @@ PLATFORMS: list[Platform] = [
     Platform.FAN,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.ALARM_CONTROL_PANEL,
     Platform.CAMERA,
 ]
 
