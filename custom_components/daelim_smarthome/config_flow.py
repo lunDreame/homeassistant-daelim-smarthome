@@ -283,10 +283,6 @@ class DaelimConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {vol.Required("wallpad_number"): str}
             ),
-            description_placeholders={
-                "dong": self._wallpad_dong or "-",
-                "ho": self._wallpad_ho or "-",
-            },
             errors=errors,
         )
 

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from pathlib import Path
 from typing import Callable
 
 from firebase_messaging import FcmPushClient, FcmRegisterConfig
+from homeassistant.config_entries import ConfigEntry
 
 from .const import (
     FCM_API_KEY,
@@ -18,35 +16,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _get_credentials_path(hass, entry_id: str) -> str:
-    """Get path for storing FCM credentials."""
-    return str(Path(hass.config.config_dir) / f".daelim_smarthome_{entry_id}_fcm.json")
-
-
-def load_credentials(hass, entry_id: str) -> dict | None:
-    """Load FCM credentials from disk."""
-    path = _get_credentials_path(hass, entry_id)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as err:
-        _LOGGER.warning("Failed to load FCM credentials: %s", err)
-        return None
-
-
-def save_credentials(hass, entry_id: str, credentials: dict) -> None:
-    """Save FCM credentials to disk."""
-    path = _get_credentials_path(hass, entry_id)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(credentials, f, indent=2)
-        _LOGGER.debug("Saved FCM credentials to %s", path)
-    except OSError as err:
-        _LOGGER.error("Failed to save FCM credentials: %s", err)
+CONF_FCM_CREDENTIALS = "fcm_credentials"
 
 
 class DaelimFcmClient:
@@ -55,12 +25,13 @@ class DaelimFcmClient:
     def __init__(
         self,
         hass,
-        entry_id: str,
+        entry: ConfigEntry,
         on_push: Callable[[int, int, dict], None],
     ) -> None:
         """Initialize FCM client."""
         self.hass = hass
-        self.entry_id = entry_id
+        self.entry = entry
+        self.entry_id = entry.entry_id
         self.on_push = on_push
         self._client: FcmPushClient | None = None
         self._credentials: dict | None = None
@@ -79,25 +50,29 @@ class DaelimFcmClient:
         self.on_push(ptype, sub_type, data)
 
     def _on_credentials_updated(self, credentials: dict) -> None:
-        """Save credentials when updated."""
+        """Persist credentials when updated."""
         self._credentials = credentials
-        self.hass.add_job(
-            self.hass.async_add_executor_job,
-            save_credentials,
-            self.hass,
-            self.entry_id,
-            credentials,
-        )
+        self.hass.add_job(self._save_credentials_to_entry, credentials)
+
+    def _load_credentials_from_entry(self) -> dict | None:
+        """Load credentials from config entry data."""
+        credentials = self.entry.data.get(CONF_FCM_CREDENTIALS)
+        return credentials if isinstance(credentials, dict) else None
+
+    def _save_credentials_to_entry(self, credentials: dict) -> None:
+        """Save credentials into config entry data."""
+        current = self.entry.data.get(CONF_FCM_CREDENTIALS)
+        if current == credentials:
+            return
+        updated_data = dict(self.entry.data)
+        updated_data[CONF_FCM_CREDENTIALS] = credentials
+        self.hass.config_entries.async_update_entry(self.entry, data=updated_data)
 
     async def start(self) -> str | None:
         """Start FCM client and return FCM token for PUSH_REQUEST."""
         try:
             if self._credentials is None:
-                self._credentials = await self.hass.async_add_executor_job(
-                    load_credentials,
-                    self.hass,
-                    self.entry_id,
-                )
+                self._credentials = self._load_credentials_from_entry()
             config = FcmRegisterConfig(
                 project_id=FCM_PROJECT_ID,
                 app_id=FCM_APP_ID,

@@ -87,7 +87,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         hass.async_add_job(_handle())
 
-    fcm_client = DaelimFcmClient(hass, entry.entry_id, _on_fcm_push)
+    fcm_client = DaelimFcmClient(hass, entry, _on_fcm_push)
     fcm_token = await fcm_client.start()
     if fcm_token:
         await client.register_push_token(fcm_token)

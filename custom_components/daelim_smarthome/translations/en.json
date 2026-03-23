@@ -34,7 +34,7 @@
       },
       "wall_pad": {
         "title": "Wall Pad Authentication",
-        "description": "Enter the authentication number shown on your wall pad. (Building: {dong}, Unit: {ho})",
+        "description": "Enter the authentication number shown on your wall pad.",
         "data": {
           "wallpad_number": "Wall pad code"
         }

@@ -34,7 +34,7 @@
       },
       "wall_pad": {
         "title": "월패드 인증",
-        "description": "월패드에 표시된 인증번호를 입력하세요. (동: {dong}, 호: {ho})",
+        "description": "월패드에 표시된 인증번호를 입력하세요.",
         "data": {
           "wallpad_number": "월패드 인증번호"
         }
