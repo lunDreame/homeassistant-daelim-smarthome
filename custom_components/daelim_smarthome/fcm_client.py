@@ -7,6 +7,7 @@ from typing import Callable
 
 from firebase_messaging import FcmPushClient, FcmRegisterConfig
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import callback
 
 from .const import (
     FCM_API_KEY,
@@ -59,6 +60,7 @@ class DaelimFcmClient:
         credentials = self.entry.data.get(CONF_FCM_CREDENTIALS)
         return credentials if isinstance(credentials, dict) else None
 
+    @callback
     def _save_credentials_to_entry(self, credentials: dict) -> None:
         """Save credentials into config entry data."""
         current = self.entry.data.get(CONF_FCM_CREDENTIALS)
