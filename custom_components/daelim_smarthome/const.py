@@ -50,6 +50,7 @@ class LoginSubTypes:
     PUSH_RESPONSE = 14
     DELETE_CERTIFICATION_REQUEST = 17
     APPROVAL_REQUEST = 27
+    APPROVAL_RESPONSE = 28
     WALL_PAD_REQUEST = 29
     WALL_PAD_RESPONSE = 30
     APPROVAL_DELETE_REQUEST = 47
@@ -72,6 +73,15 @@ class InfoSubTypes:
 class ElevatorCallSubTypes:
     CALL_REQUEST = 1
     CALL_RESPONSE = 2
+
+
+class EmsSubTypes:
+    NOW_REQUEST = 1
+    NOW_RESPONSE = 2
+    MONTHLY_REQUEST = 3
+    MONTHLY_RESPONSE = 4
+    GRAPH_REQUEST = 16
+    GRAPH_RESPONSE = 17
 
 
 # FCM Push Types

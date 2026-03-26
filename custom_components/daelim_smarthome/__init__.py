@@ -13,7 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from .client import DaelimClient
 from .config_flow import generate_uuid_from_username
 from .const import DOMAIN, EventPushTypes, PushTypes
-from .coordinator import DaelimEventCoordinator
+from .coordinator import DaelimEnergyCoordinator, DaelimEventCoordinator
 from .fcm_client import DaelimFcmClient
 
 if TYPE_CHECKING:
@@ -30,6 +30,7 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.ALARM_CONTROL_PANEL,
     Platform.CAMERA,
+    Platform.SENSOR,
 ]
 
 
@@ -62,6 +63,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return False
 
     event_coordinator = DaelimEventCoordinator(hass)
+    energy_coordinator = DaelimEnergyCoordinator(hass, client)
+    await energy_coordinator.async_config_entry_first_refresh()
 
     def _on_fcm_push(ptype: int, sub_type: int, data: dict) -> None:
         """Handle FCM push notification."""
@@ -102,6 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "client": client,
         "entry": entry,
         "event_coordinator": event_coordinator,
+        "energy_coordinator": energy_coordinator,
         "fcm_client": fcm_client,
         "listeners": [],
     }

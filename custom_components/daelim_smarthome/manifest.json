@@ -3,7 +3,7 @@
   "name": "Daelim SmartHome",
   "integration_type": "hub",
   "documentation": "https://github.com/lunDreame/homeassistant-daelim-smarthome",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "config_flow": true,
   "iot_class": "local_push",
   "requirements": [

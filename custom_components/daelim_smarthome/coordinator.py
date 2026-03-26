@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -49,4 +50,42 @@ class DaelimEventCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "door_communal_trigger": False,
             "vehicle_trigger": False,
             "camera_motion_trigger": False,
+        }
+
+
+class DaelimEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for periodic EMS energy data."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client,
+    ) -> None:
+        """Initialize energy coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="Daelim SmartHome Energy",
+            update_interval=timedelta(hours=1),
+        )
+        self._client = client
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch EMS monthly and yearly energy usage."""
+        energy = None
+        energy_yearly: dict[str, dict | None] = {}
+
+        try:
+            energy = await self._client.query_energy_monthly()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Failed to fetch monthly energy usage: %s", err)
+
+        try:
+            energy_yearly = await self._client.query_all_energy_yearly()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Failed to fetch yearly energy usage: %s", err)
+
+        return {
+            "energy": energy,
+            "energy_yearly": energy_yearly,
         }

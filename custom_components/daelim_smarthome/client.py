@@ -13,6 +13,7 @@ from .const import (
     MMF_SERVER_PORT,
     Types,
     DeviceSubTypes,
+    EmsSubTypes,
     GuardSubTypes,
     LoginSubTypes,
     SettingSubTypes,
@@ -717,6 +718,60 @@ class DaelimClient:
             ElevatorCallSubTypes.CALL_RESPONSE,
         )
         return resp if err == Errors.SUCCESS else None
+
+    async def query_energy_monthly(
+        self,
+        year: str | None = None,
+        month: str | None = None,
+    ) -> dict | None:
+        """Query monthly energy usage."""
+        if year is None or month is None:
+            import datetime
+
+            now = datetime.datetime.now()
+            year = year or str(now.year)
+            month = month or str(now.month)
+
+        resp, err = await self._request_response(
+            {"year": str(year), "month": str(month)},
+            Types.EMS,
+            EmsSubTypes.MONTHLY_REQUEST,
+            EmsSubTypes.MONTHLY_RESPONSE,
+            timeout=15.0,
+        )
+        return resp if err == Errors.SUCCESS else None
+
+    async def query_energy_year(
+        self,
+        energy_type: str,
+        year: str | None = None,
+    ) -> dict | None:
+        """Query yearly energy graph for a specific energy type."""
+        if year is None:
+            import datetime
+
+            year = str(datetime.datetime.now().year)
+
+        resp, err = await self._request_response(
+            {
+                "type": energy_type,
+                "gubun": "year",
+                "year": str(year),
+                "month": "",
+            },
+            Types.EMS,
+            EmsSubTypes.GRAPH_REQUEST,
+            EmsSubTypes.GRAPH_RESPONSE,
+            timeout=20.0,
+        )
+        return resp if err == Errors.SUCCESS else None
+
+    async def query_all_energy_yearly(self) -> dict[str, dict | None]:
+        """Query yearly energy usage for all supported types."""
+        results: dict[str, dict | None] = {}
+        for energy_type in ("Elec", "Gas", "Water", "Hotwater", "Heating"):
+            results[energy_type] = await self.query_energy_year(energy_type)
+        return results
 
     async def visitor_list(self, page: int = 0, listcount: int = 1) -> dict | None:
         """Get visitor list."""
